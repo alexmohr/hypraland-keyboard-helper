@@ -1,0 +1,9 @@
+[package]
+name = "hypraland-keyboard-helper"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+hyprland = "0.4.0-beta.2"
+notify-rust = "4.11.5"
+clap = { version = "4.5.32", features = ["derive"] }
