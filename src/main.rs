@@ -1,5 +1,6 @@
 use hypraland_keyboard_helper::cli::CommandLineArgs;
 use hyprland::data::{Devices, Keyboard};
+use hyprland::event_listener::EventListener;
 use hyprland::prelude::HyprData;
 use notify_rust::{Hint, Notification};
 use std::error::Error;
@@ -88,9 +89,8 @@ fn print_layouts(map: &Option<String>) -> Result<(), Box<dyn Error>> {
 }
 
 fn listen_layout_changed(map: &Option<String>) -> Result<(), Box<dyn Error>> {
-    use hyprland::event_listener::EventListener;
     let mut listener = EventListener::new(); // creates a new listener
-    // add a event handler which will be ran when this event happens
+    // add a event handler which will be run when this event happens
     let layouts = map.clone();
     listener.add_layout_changed_handler(move |data| {
         println!("{}", map_layouts(&layouts, &data.layout_name));
