@@ -4,6 +4,8 @@ use hyprland::event_listener::EventListener;
 use hyprland::prelude::HyprData;
 use notify_rust::{Hint, Notification};
 use std::error::Error;
+use std::thread::sleep;
+use std::time::Duration;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args = CommandLineArgs::new();
@@ -14,7 +16,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         print_layouts(&args.map)?;
     }
     if Some(true) == args.listen {
-        listen_layout_changed(&args.map)?;
+        // use loop, so we reconnect in case connection is lost.
+        loop {
+            listen_layout_changed(&args.map)?;
+            sleep(Duration::from_millis(500));
+        }
     }
 
     Ok(())
@@ -93,7 +99,13 @@ fn listen_layout_changed(map: &Option<String>) -> Result<(), Box<dyn Error>> {
     // add a event handler which will be run when this event happens
     let layouts = map.clone();
     listener.add_layout_changed_handler(move |data| {
-        println!("{}", map_layouts(&layouts, &data.layout_name));
+        if data.layout_name.to_lowercase().contains("error") {
+            if let Err(e) = print_layouts(&layouts) {
+                println!("failed to print layouts: {}", e);
+            }
+        } else {
+            println!("{}", map_layouts(&layouts, &data.layout_name));
+        }
     });
     Ok(listener.start_listener()?)
 }
