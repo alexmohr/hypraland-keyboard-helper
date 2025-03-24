@@ -27,6 +27,12 @@ pub struct CommandLineArgs {
     pub listen: Option<bool>,
 }
 
+impl Default for CommandLineArgs {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CommandLineArgs {
     pub fn new() -> Self {
         CommandLineArgs::parse()

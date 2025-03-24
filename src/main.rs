@@ -39,13 +39,8 @@ fn next_layout() -> Result<(), Box<dyn Error>> {
             continue;
         }
         let new_keyboard = match fetch_keyboard(&keyboard) {
-            Ok(new_keyboard) => {
-                if new_keyboard.is_some() {
-                    new_keyboard.unwrap()
-                } else {
-                    continue;
-                }
-            }
+            Ok(Some(new_keyboard)) => new_keyboard,
+            Ok(None) => continue,
             Err(e) => {
                 eprintln!(
                     "failed to change layout for keyboard {}, {:?}",
@@ -76,7 +71,7 @@ fn map_layouts(map: &Option<String>, active_keymap: &str) -> String {
     if let Some(map_value) = map {
         let maps = map_value
             .split(";")
-            .find(|kb| kb.to_string().starts_with(&active_keymap));
+            .find(|kb| kb.to_string().starts_with(active_keymap));
         if maps.is_some() {
             let value = maps.unwrap().split("=").collect::<Vec<&str>>();
             if value.len() == 2 {
@@ -125,7 +120,6 @@ fn fetch_keyboard(search: &Keyboard) -> Result<Option<Keyboard>, Box<dyn Error>>
     let keyboard: Option<Keyboard> = devices
         .keyboards
         .into_iter()
-        .filter(|keyboard| keyboard.name == search.name)
-        .next();
+        .find(|keyboard| keyboard.name == search.name);
     Ok(keyboard)
 }
