@@ -2,6 +2,7 @@ use hypraland_keyboard_helper::cli::CommandLineArgs;
 use hyprland::data::{Devices, Keyboard};
 use hyprland::event_listener::EventListener;
 use hyprland::prelude::HyprData;
+use hyprland::shared::HyprError;
 use notify_rust::{Hint, Notification};
 use std::error::Error;
 use std::thread::sleep;
@@ -26,7 +27,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn next_layout() -> Result<(), Box<dyn Error>> {
+fn next_layout() -> Result<(), HyprError> {
     for keyboard in fetch_main_keyboards()? {
         if let Err(e) = hyprland::ctl::switch_xkb_layout::call(
             &keyboard.name,
@@ -39,13 +40,9 @@ fn next_layout() -> Result<(), Box<dyn Error>> {
             continue;
         }
         let new_keyboard = match fetch_keyboard(&keyboard) {
-            Ok(Some(new_keyboard)) => new_keyboard,
-            Ok(None) => continue,
-            Err(e) => {
-                eprintln!(
-                    "failed to change layout for keyboard {}, {:?}",
-                    &keyboard.name, e
-                );
+            Some(new_keyboard) => new_keyboard,
+            None => {
+                println!("failed find new layout for keyboard {}", &keyboard.name);
                 continue;
             }
         };
@@ -55,7 +52,7 @@ fn next_layout() -> Result<(), Box<dyn Error>> {
                 "Switched layout to {}",
                 new_keyboard.active_keymap
             ))
-            .icon("dialog-information") // Optional: specify an icon
+            .icon("dialog-information")
             // replace old notification with new one
             .hint(Hint::Custom(
                 String::from("x-canonical-private-synchronous"),
@@ -68,44 +65,49 @@ fn next_layout() -> Result<(), Box<dyn Error>> {
 }
 
 fn map_layouts(map: &Option<String>, active_keymap: &str) -> String {
-    if let Some(map_value) = map {
-        let maps = map_value
-            .split(";")
-            .find(|kb| kb.to_string().starts_with(active_keymap));
-        if maps.is_some() {
-            let value = maps.unwrap().split("=").collect::<Vec<&str>>();
-            if value.len() == 2 {
-                return value[1].to_string();
-            }
-        }
-    }
-    active_keymap.to_string()
+    map.as_deref()
+        .and_then(|map_value| {
+            map_value
+                .split(';')
+                .find(|kb| kb.starts_with(active_keymap))
+                .and_then(|maps| maps.split_once('=').map(|(_, v)| v.to_string()))
+        })
+        .unwrap_or_else(|| active_keymap.to_string())
 }
 
-fn print_layouts(map: &Option<String>) -> Result<(), Box<dyn Error>> {
+
+fn print_layouts(map: &Option<String>) -> Result<(), HyprError> {
     for keyboard in fetch_main_keyboards()?.iter() {
         println!("{}", map_layouts(map, &keyboard.active_keymap));
     }
     Ok(())
 }
 
-fn listen_layout_changed(map: &Option<String>) -> Result<(), Box<dyn Error>> {
-    let mut listener = EventListener::new(); // creates a new listener
-    // add a event handler which will be run when this event happens
+fn listen_layout_changed(map: &Option<String>) -> Result<(), HyprError> {
+    let mut listener = EventListener::new();
     let layouts = map.clone();
     listener.add_layout_changed_handler(move |data| {
-        if data.layout_name.to_lowercase().contains("error") {
-            if let Err(e) = print_layouts(&layouts) {
-                println!("failed to print layouts: {}", e);
+        let keyboard = match fetch_keyboard_by_name(&data.keyboard_name) {
+            Some(keyboard) => keyboard,
+            None => {
+                println!("Can't find keyboard with given name {}", data.keyboard_name);
+                return;
             }
-        } else {
-            println!("{}", map_layouts(&layouts, &data.layout_name));
+        };
+
+        if !keyboard.main || keyboard.active_keymap.to_lowercase().contains("error") {
+            return;
         }
+
+        println!("keyboard={}, keymap={}", keyboard.name, keyboard.active_keymap);
+
+        println!("{}", map_layouts(&layouts, &keyboard.active_keymap));
     });
+
     Ok(listener.start_listener()?)
 }
 
-fn fetch_main_keyboards() -> Result<Vec<Keyboard>, Box<dyn Error>> {
+fn fetch_main_keyboards() -> Result<Vec<Keyboard>, HyprError> {
     let devices = Devices::get()?;
     let keyboards = devices
         .keyboards
@@ -115,11 +117,20 @@ fn fetch_main_keyboards() -> Result<Vec<Keyboard>, Box<dyn Error>> {
     Ok(keyboards)
 }
 
-fn fetch_keyboard(search: &Keyboard) -> Result<Option<Keyboard>, Box<dyn Error>> {
-    let devices = Devices::get()?;
-    let keyboard: Option<Keyboard> = devices
-        .keyboards
-        .into_iter()
-        .find(|keyboard| keyboard.name == search.name);
-    Ok(keyboard)
+fn fetch_keyboard(search: &Keyboard) -> Option<Keyboard> {
+    fetch_keyboard_by_name(&search.name)
+}
+
+fn fetch_keyboard_by_name(search: &str) -> Option<Keyboard> {
+    let devices = Devices::get();
+    match devices {
+        Ok(devices) => devices
+            .keyboards
+            .into_iter()
+            .find(|keyboard| keyboard.name == search),
+        Err(e) => {
+            println!("failed to get keyboard with given name {}, error=", e);
+            None
+        }
+    }
 }
