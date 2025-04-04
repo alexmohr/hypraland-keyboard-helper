@@ -34,7 +34,8 @@ impl Default for CommandLineArgs {
 }
 
 impl CommandLineArgs {
+    #[must_use]
     pub fn new() -> Self {
-        CommandLineArgs::parse()
+        Self::parse()
     }
 }

@@ -1,3 +1,7 @@
+#![warn(clippy::pedantic)]
+#![warn(clippy::all)]
+#![warn(clippy::nursery)]
+#![allow(clippy::single_call_fn)]
 use hypraland_keyboard_helper::cli::CommandLineArgs;
 use hyprland::data::{Devices, Keyboard};
 use hyprland::event_listener::EventListener;
@@ -14,12 +18,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         next_layout()?;
     }
     if Some(true) == args.print_layouts {
-        print_layouts(&args.map)?;
+        print_layouts(args.map.as_ref())?;
     }
     if Some(true) == args.listen {
         // use loop, so we reconnect in case connection is lost.
         loop {
-            listen_layout_changed(&args.map)?;
+            listen_layout_changed(args.map.as_ref())?;
             sleep(Duration::from_millis(500));
         }
     }
@@ -39,12 +43,10 @@ fn next_layout() -> Result<(), HyprError> {
             );
             continue;
         }
-        let new_keyboard = match fetch_keyboard(&keyboard) {
-            Some(new_keyboard) => new_keyboard,
-            None => {
-                println!("failed find new layout for keyboard {}", &keyboard.name);
-                continue;
-            }
+
+        let Some(new_keyboard) = fetch_keyboard(&keyboard) else {
+            println!("failed find new layout for keyboard {}", &keyboard.name);
+            continue;
         };
 
         Notification::new()
@@ -64,9 +66,8 @@ fn next_layout() -> Result<(), HyprError> {
     Ok(())
 }
 
-fn map_layouts(map: &Option<String>, active_keymap: &str) -> String {
-    map.as_deref()
-        .and_then(|map_value| {
+fn map_layouts(map: Option<&String>, active_keymap: &str) -> String {
+    map.and_then(|map_value| {
             map_value
                 .split(';')
                 .find(|kb| kb.starts_with(active_keymap))
@@ -76,35 +77,26 @@ fn map_layouts(map: &Option<String>, active_keymap: &str) -> String {
 }
 
 
-fn print_layouts(map: &Option<String>) -> Result<(), HyprError> {
-    for keyboard in fetch_main_keyboards()?.iter() {
+fn print_layouts(map: Option<&String>) -> Result<(), HyprError> {
+    fetch_main_keyboards()?.iter().for_each(|keyboard| {
         println!("{}", map_layouts(map, &keyboard.active_keymap));
-    }
+    });
     Ok(())
 }
 
-fn listen_layout_changed(map: &Option<String>) -> Result<(), HyprError> {
+fn listen_layout_changed(layout_map: Option<&String>) -> Result<(), HyprError> {
     let mut listener = EventListener::new();
-    let layouts = map.clone();
+    let layouts = layout_map.map(String::to_owned);
     listener.add_layout_changed_handler(move |data| {
-        let keyboard = match fetch_keyboard_by_name(&data.keyboard_name) {
-            Some(keyboard) => keyboard,
-            None => {
-                println!("Can't find keyboard with given name {}", data.keyboard_name);
-                return;
-            }
-        };
-
-        if !keyboard.main || keyboard.active_keymap.to_lowercase().contains("error") {
-            return;
+        if let Some(k) = fetch_keyboard_by_name(&data.keyboard_name)
+            .filter(|k| k.main)
+            .filter(|k| !k.active_keymap.to_lowercase().contains("error"))
+        {
+            println!("{}", map_layouts(layouts.as_ref(), &k.active_keymap));
         }
-
-        println!("keyboard={}, keymap={}", keyboard.name, keyboard.active_keymap);
-
-        println!("{}", map_layouts(&layouts, &keyboard.active_keymap));
     });
 
-    Ok(listener.start_listener()?)
+    listener.start_listener()
 }
 
 fn fetch_main_keyboards() -> Result<Vec<Keyboard>, HyprError> {
@@ -129,7 +121,7 @@ fn fetch_keyboard_by_name(search: &str) -> Option<Keyboard> {
             .into_iter()
             .find(|keyboard| keyboard.name == search),
         Err(e) => {
-            println!("failed to get keyboard with given name {}, error=", e);
+            println!("failed to get keyboard with given name {e}, error=");
             None
         }
     }
